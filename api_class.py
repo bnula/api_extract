@@ -20,16 +20,21 @@ class CallApi:
             self.__valid_views = data["views"]
         if api_realm not in self.__valid_realms:
             print(f"Please select a valid realm from the list: {self.__valid_realms}")
-            self.api_realm = input("Input:")
+            self.__api_realm = input("Input:")
         else:
-            self.api_realm = api_realm
+            self.__api_realm = api_realm
         self.__config = RawConfigParser()
         self.__config.read(api_config_file)
+        self.__api_key = self.__config.get(self.__api_realm, "api_key")
         self.__access_token = None
         self.__refresh_token = None
         self.__token_time_left = None
+        self.__view_name = None
+        self.__job_id = None
+        self.__job_status = None
 
     def authenticate(self, token_type="refresh"):
+        # can be changed to use if access_token is None for initial token request
         try:
             # based on token_type pick an endpoint
             if token_type.lower() == "access":
@@ -47,7 +52,7 @@ class CallApi:
             self.__logger.info(f"token request url = {url}")
 
             # create request
-            auth_code = self.__config.get(self.api_realm, "auth_code")
+            auth_code = self.__config.get(self.__api_realm, "auth_code")
             payload = {}
             headers = {
                 "Authorization": f"Basic {auth_code}",
@@ -71,6 +76,51 @@ class CallApi:
                 self.__logger.info(f"authentication request response - {response.json()}")
                 raise ValueError(f"Authentication failed - {response.status_code} {response.json()}")
 
+        except Exception as e:
+            self.__logger.error(e)
+            print(e)
+
+    def submit_job(self, view_name):
+        self.__view_name = view_name
+        try:
+            self.__logger.info(f"view name: {view_name}")
+            self.__logger.info(f"refresh tokens")
+            # check the token expiration time and refresh the token
+            self.authenticate()
+            if self.__token_time_left < 45:
+                time.sleep(60)
+                self.authenticate()
+            # create url
+            tool_url = self.__config.get("server", "tool_url")
+            job_sub_endpoint = self.__config.get("server", "job_submission")
+            url = f"{tool_url}/{job_sub_endpoint}/jobs?realm={self.__api_realm}"
+            self.__logger.info(f"job submit url - {url}")
+            # create request variables
+            yesterday = datetime.datetime.now() - datetime.timedelta(-1)
+            start_date = f'{yesterday.strftime("%D-%m-%y")}T00:00:01'
+            end_date = f'{yesterday.strftime("%D-%m-%y")}T23:59:59'
+            # create request
+            payload = '{"ViewTemplateName": ' + f'"{view_name}"' + ' "filters": {"createdFrom": ' + f'"{start_date}"' + ', "createdTo:" ' + f'"{end_date}"' + "}}"
+            headers = {
+                "apiKey": self.__api_key,
+                "Authorization": f"Bearer {self.__access_token}",
+                "Content-Type": "application/json",
+                "Accept": "applicaiton/json"
+            }
+            self.__logger.info(f"job submission payload = {payload}")
+            # send the request
+            response = requests.request("POST", url, headers=headers, data=payload)
+            # if the token has expired refresh it and resend the request
+            self.authenticate()
+            if response.status_code == 401:
+                print("need to refresh the token")
+                self.authenticate()
+                response = requests.request("POST", url, headers=headers, data=payload)
+            # retrieve job_id
+            r_json = response.json()
+            self.__job_id = r_json["jobId"]
+            print(f"job id: {self.__job_id}")
+            self.__logger.info(f"Job Id: {self.__job_id}")
         except Exception as e:
             self.__logger.error(e)
             print(e)
