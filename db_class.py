@@ -10,8 +10,8 @@ class DbOperations:
         # validation lists
         self.__valid_connections = ["prod_server", "dev_server"]
         # assign internal variables
-        self.__key_file = "D:/Python/Projects/api_extract/config_files/fernet_key.txt"
-        self.__config_file = "D:/Python/Projects/api_extract/config_files/db_connections.config"
+        self.__key_file = "D:/Python//config_files/fernet_key.txt"
+        self.__config_file = "D:/Python/config_files/db_connections.config"
         self.__config = RawConfigParser()
         self.__config.read(self.__config_file)
         self.__connection_name = connection_name
