@@ -26,12 +26,13 @@ class CallApi:
         self.__config = RawConfigParser()
         self.__config.read(api_config_file)
         self.__api_key = self.__config.get(self.__api_realm, "api_key")
+        self.__tool_url = self.__config.get("server", "tool_url")
         self.__access_token = None
         self.__refresh_token = None
         self.__token_time_left = None
         self.__view_name = None
         self.__job_id = None
-        self.__job_status = None
+        self.__zip_file_list = None
 
     def authenticate(self, token_type="refresh"):
         # can be changed to use if access_token is None for initial token request
@@ -81,9 +82,9 @@ class CallApi:
             print(e)
 
     def submit_job(self, view_name):
+        self.__logger.info(f"========== {view_name} submit job ==========")
         self.__view_name = view_name
         try:
-            self.__logger.info(f"view name: {view_name}")
             self.__logger.info(f"refresh tokens")
             # check the token expiration time and refresh the token
             self.authenticate()
@@ -91,9 +92,8 @@ class CallApi:
                 time.sleep(60)
                 self.authenticate()
             # create url
-            tool_url = self.__config.get("server", "tool_url")
             job_sub_endpoint = self.__config.get("server", "job_submission")
-            url = f"{tool_url}/{job_sub_endpoint}/jobs?realm={self.__api_realm}"
+            url = f"{self.__tool_url}/{job_sub_endpoint}/jobs?realm={self.__api_realm}"
             self.__logger.info(f"job submit url - {url}")
             # create request variables
             yesterday = datetime.datetime.now() - datetime.timedelta(-1)
@@ -121,6 +121,66 @@ class CallApi:
             self.__job_id = r_json["jobId"]
             print(f"job id: {self.__job_id}")
             self.__logger.info(f"Job Id: {self.__job_id}")
+        except Exception as e:
+            self.__logger.error(e)
+            print(e)
+
+    def check_job_result(self):
+        try:
+            self.__logger.info("========== job result ==========")
+            self.__logger.info("refresh tokens")
+            self.authenticate()
+            if self.__token_time_left() < 45:
+                time.sleep(60)
+                self.authenticate()
+            # create url
+            job_result_endpoint = self.__config.get("server", "job_result")
+            url = f"{self.__tool_url}/{job_result_endpoint}/jobs/{self.__job_id}?realm={self.__api_realm}"
+            payload = {}
+            headers = {
+                "apiKey": self.__api_key,
+                "Authorization": f"Bearer {self.__access_token}",
+                "Accept": "application/json"
+            }
+
+            # send the request
+            response = requests.request("GET", url, headers=headers, data=payload)
+
+            if response.status_code == 401:
+                print("need to refresh token")
+                self.authenticate()
+                response = requests.request("GET", headers=headers, data=payload)
+
+            r_json = response.json()
+            job_status = r_json["status"]
+
+            print(f"job status: {job_status}")
+            while job_status == "pending":
+                self.authenticate()
+                # refresh access token and refresh headers
+                if self.__token_time_left < 45:
+                    time.sleep(60)
+                    self.authenticate()
+                    headers = {
+                        "apiKey": self.__api_key,
+                        "Authorization": f"Bearer {self.__access_token}",
+                        "Accept": "application/json"
+                    }
+                response = requests.request("GET", headers=headers, data=payload)
+                r_json = response.json()
+                job_status = r_json["status"]
+                if job_status == "completed":
+                    self.authenticate()
+                    # refresh access token and refresh headers
+                    if self.__token_time_left < 45:
+                        time.sleep(60)
+                        self.authenticate()
+                    break
+                print("waiting 180 seconds")
+                time.sleep(180)
+                print(f"job status: {job_status}")
+            self.__zip_file_list = r_json["files"]
+            self.__logger.info(f"list of zip files: {self.__zip_file_list}")
         except Exception as e:
             self.__logger.error(e)
             print(e)
