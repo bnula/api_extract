@@ -7,6 +7,8 @@ import setup_logs
 import json
 from configparser import RawConfigParser
 
+from api_json_parser import ParseFile
+
 
 class CallApi:
     def __init__(self, api_realm, db_connection="dev_server"):
@@ -227,16 +229,46 @@ class CallApi:
                         os.unlink(extracted_file)
                     with zipfile.ZipFile(download_file_path, "r") as zip_ref:
                         zip_ref.extractall(extract_file_path)
-                    # call ParseFile class
+                    parse = ParseFile(extracted_file)
                     if self.__view_name == self.__config.get("views", "order"):
-                        # run purchase order method
+                        parse.purchase_order_metadata_extract(self.__api_realm)
+                        parse.attachments(self.__api_realm)
                         os.unlink(extracted_file)
                     elif self.__view_name == self.__config.get("views", "invoice"):
-                        # run invoice method
+                        parse.invoice_metadata_extract(self.__api_realm)
+                        parse.attachments(self.__api_realm)
                         os.unlink(extracted_file)
                     elif self.__view_name == self.__config.get("views", "order"):
-                        # run requisition method
+                        parse.invoice_metadata_extract(self.__api_realm)
+                        parse.attachments(self.__api_realm)
                         os.unlink(extracted_file)
         except Exception as e:
             self.__logger.error(e)
             print(e)
+
+    def download_attachment(self, attachment_id):
+        self.authenticate()
+        if self.__token_time_left < 45:
+            time.sleep(60)
+            self.authenticate()
+        attachment_endpoint = self.__config.get("server", "attachments")
+        url = f"{self.__tool_url}/{attachment_endpoint}/attachment/{attachment_id}/realm={self.__api_realm}"
+        payload = {}
+        headers = {
+            "apiKey": self.__api_key,
+            "Authorizaton": f"Bearer {self.__access_token}"
+        }
+        response = requests.request("GET", url, headers=headers, data=payload)
+        if response.status_code == 401:
+            self.authenticate()
+            headers = {
+                "apiKey": self.__api_key,
+                "Authorizaton": f"Bearer {self.__access_token}"
+            }
+            response = requests.request("GET", url, headers=headers, data=payload)
+        if response.status_code == 200:
+            return response.content
+        else:
+            raise ConnectionError(f"Error: {response.status_code} - {response.text}")
+        # this method is used to return the binary content of a file that is saved based on the other metadata
+        # loops over the select table of metadata and creates a desired folder structure for each item
