@@ -27,6 +27,7 @@ class CallApi:
         self.__config.read(api_config_file)
         self.__api_key = self.__config.get(self.__api_realm, "api_key")
         self.__tool_url = self.__config.get("server", "tool_url")
+        self.__job_result_endpoint = self.__config.get("server", "job_result")
         self.__access_token = None
         self.__refresh_token = None
         self.__token_time_left = None
@@ -126,16 +127,15 @@ class CallApi:
             print(e)
 
     def check_job_result(self):
+        self.__logger.info(f"========== job result - {self.__view_name} ==========")
         try:
-            self.__logger.info("========== job result ==========")
             self.__logger.info("refresh tokens")
             self.authenticate()
             if self.__token_time_left() < 45:
                 time.sleep(60)
                 self.authenticate()
             # create url
-            job_result_endpoint = self.__config.get("server", "job_result")
-            url = f"{self.__tool_url}/{job_result_endpoint}/jobs/{self.__job_id}?realm={self.__api_realm}"
+            url = f"{self.__tool_url}/{self.__job_result_endpoint}/jobs/{self.__job_id}?realm={self.__api_realm}"
             payload = {}
             headers = {
                 "apiKey": self.__api_key,
@@ -181,6 +181,62 @@ class CallApi:
                 print(f"job status: {job_status}")
             self.__zip_file_list = r_json["files"]
             self.__logger.info(f"list of zip files: {self.__zip_file_list}")
+        except Exception as e:
+            self.__logger.error(e)
+            print(e)
+
+    def download_zip_files(self):
+        self.__logger.info(f"========== download zip files - {self.__view_name} ==========")
+        try:
+            # refresh the tokens
+            self.__logger.info("refresh tokens")
+            self.authenticate()
+            if self.__token_time_left < 45:
+                time.sleep(60)
+                self.authenticate()
+            self.__logger.info("go over each zip file")
+            for zip_file in self.__zip_file_list:
+                self.__logger.info(f"zip file: {zip_file}")
+                url = f"{self.__tool_url}/{self.__job_result_endpoint}/jobs/{self.__job_id}/files/{zip_file}?realm={self.__api_realm}"
+                payload = {}
+                headers = {
+                    "apiKey": self.__api_key,
+                    "Authorization": f"Bearer {self.__access_token}"
+                }
+                # send the http request
+                response = requests.request("GET", url, headers=headers, data=payload)
+                if response.status_code == 401:
+                    self.authenticate()
+                    headers = {
+                        "apiKey": self.__api_key,
+                        "Authorization": f"Bearer {self.__access_token}"
+                    }
+                    response = requests.request("GET", url, headers=headers, data=payload)
+                if response.status_code == 200:
+                    binary_content = response.content
+                    download_file_path = f"D:/Api_extracts/{zip_file}"
+                    if os.path.isfile(download_file_path):
+                        os.unlink(download_file_path)
+                    open(download_file_path, "x")
+                    with open(download_file_path, "wb") as f:
+                        f.write(binary_content)
+                        f.close()
+                    extract_file_path = "D:/API_extracts/unzipped"
+                    extracted_file = f"{extract_file_path}/records.txt"
+                    if os.path.isfile(extracted_file):
+                        os.unlink(extracted_file)
+                    with zipfile.ZipFile(download_file_path, "r") as zip_ref:
+                        zip_ref.extractall(extract_file_path)
+                    # call ParseFile class
+                    if self.__view_name == self.__config.get("views", "order"):
+                        # run purchase order method
+                        os.unlink(extracted_file)
+                    elif self.__view_name == self.__config.get("views", "invoice"):
+                        # run invoice method
+                        os.unlink(extracted_file)
+                    elif self.__view_name == self.__config.get("views", "order"):
+                        # run requisition method
+                        os.unlink(extracted_file)
         except Exception as e:
             self.__logger.error(e)
             print(e)
