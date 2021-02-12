@@ -103,8 +103,9 @@ class CallApi:
             self.__logger.info(f"job submit url - {url}")
             # create request variables
             yesterday = datetime.datetime.now() - datetime.timedelta(-1)
+            today = datetime.datetime.now()
             start_date = f'{yesterday.strftime("%D-%m-%y")}T00:00:01'
-            end_date = f'{yesterday.strftime("%D-%m-%y")}T23:59:59'
+            end_date = f'{today.strftime("%D-%m-%y")}T23:59:59'
             # override automatically generated dates
             if self.__start_date_override:
                 start_date = self.__start_date_override

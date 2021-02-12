@@ -1,7 +1,8 @@
 import time
 import json
-import setup_logs
 
+import setup_logs
+from send_log_email import send_email
 from api_class import CallApi
 
 
@@ -54,5 +55,9 @@ def run_single_item_type(
 
 
 logger = setup_logs.setup_logger("API_Extract_All", "D:/Logs/API_Extract")
-
-extract_all_metadata(api_realm="prod", db="prod_server", logger=logger)
+day_stamp = time.strftime("%Y-%m-%d")
+try:
+    extract_all_metadata(api_realm="prod", db="prod_server", logger=logger)
+except Exception as e:
+    logger.error(f"Exception - {e}")
+    send_email("Ariba_Extract_All", "Failed", day_stamp)
