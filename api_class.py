@@ -11,8 +11,9 @@ from api_json_parser import ParseFile
 
 
 class CallApi:
-    def __init__(self, api_realm, db_connection="dev_server"):
-        self.__logger = setup_logs.setup_logger(name=f"API_{api_realm}", path="D:/Python/Logs/Call_API")
+    def __init__(self, api_realm, view_name, db_connection="dev_server", logger=None, start_date_override=None, end_date_override=None):
+        if not logger:
+            self.__logger = setup_logs.setup_logger(name=f"API_{api_realm}", path="D:/Python/Logs/Call_API")
         # validation sets
         misc_config_file = "D:/Python/config_files/misc_api_config.json"
         api_config_file = "D:/Python/config_files/procurement_api.config"
@@ -25,6 +26,7 @@ class CallApi:
             self.__api_realm = input("Input:")
         else:
             self.__api_realm = api_realm
+        self.__db = db_connection
         self.__config = RawConfigParser()
         self.__config.read(api_config_file)
         self.__api_key = self.__config.get(self.__api_realm, "api_key")
@@ -33,9 +35,11 @@ class CallApi:
         self.__access_token = None
         self.__refresh_token = None
         self.__token_time_left = None
-        self.__view_name = None
+        self.__view_name = view_name
         self.__job_id = None
         self.__zip_file_list = None
+        self.__start_date_override = start_date_override
+        self.__end_date_override = end_date_override
 
     def authenticate(self, token_type="refresh"):
         # can be changed to use if access_token is None for initial token request
@@ -84,9 +88,8 @@ class CallApi:
             self.__logger.error(e)
             print(e)
 
-    def submit_job(self, view_name):
-        self.__logger.info(f"========== {view_name} submit job ==========")
-        self.__view_name = view_name
+    def submit_job(self):
+        self.__logger.info(f"========== {self.__view_name} submit job ==========")
         try:
             self.__logger.info(f"refresh tokens")
             # check the token expiration time and refresh the token
@@ -102,8 +105,13 @@ class CallApi:
             yesterday = datetime.datetime.now() - datetime.timedelta(-1)
             start_date = f'{yesterday.strftime("%D-%m-%y")}T00:00:01'
             end_date = f'{yesterday.strftime("%D-%m-%y")}T23:59:59'
+            # override automatically generated dates
+            if self.__start_date_override:
+                start_date = self.__start_date_override
+            if self.__end_date_override:
+                end_date = self.__end_date_override
             # create request
-            payload = '{"ViewTemplateName": ' + f'"{view_name}"' + ' "filters": {"createdFrom": ' + f'"{start_date}"' + ', "createdTo:" ' + f'"{end_date}"' + "}}"
+            payload = '{"ViewTemplateName": ' + f'"{self.__view_name}"' + ' "filters": {"createdFrom": ' + f'"{start_date}"' + ', "createdTo:" ' + f'"{end_date}"' + "}}"
             headers = {
                 "apiKey": self.__api_key,
                 "Authorization": f"Bearer {self.__access_token}",
@@ -229,7 +237,7 @@ class CallApi:
                         os.unlink(extracted_file)
                     with zipfile.ZipFile(download_file_path, "r") as zip_ref:
                         zip_ref.extractall(extract_file_path)
-                    parse = ParseFile(extracted_file)
+                    parse = ParseFile(file_location=extracted_file, db_server=self.__db)
                     if self.__view_name == self.__config.get("views", "order"):
                         parse.purchase_order_metadata_extract(self.__api_realm)
                         parse.attachments(self.__api_realm)
